@@ -4,7 +4,7 @@
 // and drives capcut-cli to build a real draft in the CapCut/JianYing store.
 import { execFile, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { basename, join, posix, win32 } from 'node:path';
 import { sanitizeFileName } from '../file-name.ts';
@@ -42,6 +42,11 @@ export type JianyingDraftStoreName = 'capcut' | 'jianying';
 export interface JianyingExportRequest {
   draftName?: string;
   fps: number;
+  /** Canvas size. Without it capcut-cli creates a 16:9 draft. */
+  width?: number;
+  height?: number;
+  /** Timeline content the draft cannot hold, passed through as warnings. */
+  omitted?: string[];
   items: JianyingExportClip[];
   captions?: JianyingExportCaption[];
   /** Whose default store to write to when no draftsDir is given (CapCut's by default). */
@@ -56,6 +61,8 @@ export type CapcutRunner = (args: string[]) => Promise<unknown>;
 export interface JianyingExportOptions {
   /** Verification seam: replaces the capcut-cli child process. */
   run?: CapcutRunner;
+  /** Verification seam: replaces the post-build duration repair. */
+  syncDuration?: (draftPath: string) => Promise<void>;
   /** Verification seam: a media file's duration in µs, null when unreadable. */
   probeDuration?: (file: string) => Promise<number | null>;
   /** Verification seams: the machine whose store and file-name rules apply. */
@@ -334,6 +341,40 @@ async function addClip(
   return { added: true };
 }
 
+const DRAFT_TIMELINE_FILES = ['draft_content.json', 'draft_info.json'];
+
+function timelineEnd(draft: { tracks?: unknown }): number {
+  const tracks = Array.isArray(draft.tracks) ? draft.tracks as Array<{ segments?: unknown }> : [];
+  let end = 0;
+  for (const track of tracks) {
+    const segments = Array.isArray(track.segments) ? track.segments as Array<{ target_timerange?: { start?: number; duration?: number } }> : [];
+    for (const { target_timerange: range } of segments) {
+      end = Math.max(end, (range?.start ?? 0) + (range?.duration ?? 0));
+    }
+  }
+  return end;
+}
+
+/**
+ * `add-video` extends the draft to each clip's untrimmed material length and
+ * `trim` leaves that total behind, so a cut timeline reports the wrong length.
+ * Set it from the segments once every clip is placed.
+ */
+async function syncDraftDuration(draftPath: string): Promise<void> {
+  let end = 0;
+  for (const name of DRAFT_TIMELINE_FILES) {
+    const file = join(draftPath, name);
+    if (!existsSync(file)) continue;
+    const draft = JSON.parse(await readFile(file, 'utf8')) as { tracks?: unknown; duration?: number };
+    end = timelineEnd(draft);
+    if (end > 0 && draft.duration !== end) await writeFile(file, JSON.stringify({ ...draft, duration: end }));
+  }
+  const metaFile = join(draftPath, 'draft_meta_info.json');
+  if (end <= 0 || !existsSync(metaFile)) return;
+  const meta = JSON.parse(await readFile(metaFile, 'utf8')) as Record<string, unknown>;
+  if ('tm_duration' in meta) await writeFile(metaFile, JSON.stringify({ ...meta, tm_duration: end }));
+}
+
 /**
  * Build a CapCut/JianYing draft from an OpenChatCut timeline using capcut-cli.
  * `init` creates an empty draft; every clip is then added at its timeline
@@ -351,13 +392,15 @@ export async function exportJianyingDraft(
   const { platform = process.platform, env = process.env, home = homedir() } = options;
   const request: JianyingExportRequest = {
     fps: Number(raw.fps) || 30,
+    width: Number(raw.width) || undefined,
+    height: Number(raw.height) || undefined,
     items: Array.isArray(raw.items) ? raw.items.filter((item) => item && typeof item === 'object') : [],
     captions: Array.isArray(raw.captions) ? raw.captions.filter((caption) => caption && typeof caption === 'object') : [],
     draftName: typeof raw.draftName === 'string' ? raw.draftName : undefined,
     store: raw.store === 'jianying' ? 'jianying' : 'capcut',
     draftsDir: typeof raw.draftsDir === 'string' ? raw.draftsDir : undefined,
   };
-  const warnings: string[] = [];
+  const warnings: string[] = Array.isArray(raw.omitted) ? raw.omitted.filter((entry) => typeof entry === 'string') : [];
   const fps = finiteAtLeast(request.fps, 1, 30);
   const videos = request.items.filter((item) => isVideoKind(item.kind));
   const audios = request.items.filter((item) => isAudioKind(item.kind));
@@ -382,7 +425,10 @@ export async function exportJianyingDraft(
   const draftsDir = expandHomeDir(String(request.draftsDir || '').trim(), platform, home)
     || defaultDraftStore(request.store ?? 'capcut', platform, env, home);
   const storeFlags = ['--jianying', '--force-write', '--drafts', draftsDir];
-  const created = await run(['init', draftName, ...storeFlags]) as { ok?: boolean; draft_path?: string; error?: string };
+  const canvasFlags = request.width && request.height
+    ? ['--width', String(Math.round(request.width)), '--height', String(Math.round(request.height))]
+    : [];
+  const created = await run(['init', draftName, ...canvasFlags, ...storeFlags]) as { ok?: boolean; draft_path?: string; error?: string };
   if (!created?.ok || !created.draft_path) {
     return { ok: false, draftName, draftPath: '', addedVideos: 0, addedAudios: 0, captions: 0, warnings, error: created?.error || 'capcut-cli init failed' };
   }
@@ -437,6 +483,11 @@ export async function exportJianyingDraft(
     } finally {
       void rm(dir, { recursive: true, force: true }).catch(() => undefined);
     }
+  }
+  try {
+    await (options.syncDuration ?? syncDraftDuration)(draftPath);
+  } catch (error) {
+    warnings.push(`draft duration was not corrected: ${error instanceof Error ? error.message : String(error)}`);
   }
   return { ok: true, draftName, draftPath, addedVideos, addedAudios, captions, warnings };
 }

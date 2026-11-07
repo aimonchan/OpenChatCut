@@ -20,9 +20,13 @@ assert.strictEqual(fps60.fps, 60);
 assert.strictEqual(fps60.width, 1920);
 
 const both = applyExportGeometry({ ...base, width: 1080, height: 1920 }, { resolution: '720p', fps: 24 });
-assert.strictEqual(both.height, 720);
+// A preset names the shorter side, so a portrait canvas keeps its width.
+assert.strictEqual(both.width, 720);
+assert.strictEqual(both.height, 1280);
 assert.strictEqual(both.fps, 24);
-// portrait 9:16
-assert.ok(both.width < both.height);
+
+const portrait1080 = applyExportGeometry({ ...base, width: 1080, height: 1920 }, { resolution: '1080p' });
+assert.strictEqual(portrait1080.width, 1080);
+assert.strictEqual(portrait1080.height, 1920);
 
 console.log('media-export.geometry.check: ok');

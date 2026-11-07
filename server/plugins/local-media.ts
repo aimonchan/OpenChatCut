@@ -17,12 +17,14 @@ import {
 } from '../../shared/directory-import.ts';
 import { browseLocalMedia } from '../agent-local-media.ts';
 import { agentImportRootsConfigured, importAgentPaths } from '../local-path-import.ts';
+import { readLocalTimelineFile } from '../local-timeline-read.ts';
 import { projectStoreHttpAuthorized } from '../project-store-http-auth.ts';
 import { UploadTooLargeError } from '../r2.ts';
 import { readBody, sendError, sendJson } from './upload-route-http.ts';
 
 export const LOCAL_MEDIA_BROWSE_PATH = '/api/local-media/browse';
 export const LOCAL_MEDIA_IMPORT_PATH = '/api/local-media/import';
+export const LOCAL_TIMELINE_READ_PATH = '/api/local-media/read-timeline';
 
 const MAX_IMPORT_PATHS = 100;
 /** A browse request is tiny, but an import carries the pool's whole content-hash
@@ -124,6 +126,26 @@ async function handleImport(req: IncomingMessage, res: ServerResponse): Promise<
   }
 }
 
+async function handleReadTimeline(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (req.method !== 'POST') {
+    req.resume();
+    sendError(res, 405, 'method not allowed — use POST');
+    return;
+  }
+  if (!authorized(req, res) || !allowlisted(req, res)) return;
+  try {
+    const body = await readJsonObject(req);
+    if (typeof body.path !== 'string' || !body.path.trim()) {
+      sendError(res, 400, 'a timeline path is required');
+      return;
+    }
+    sendJson(res, 200, await readLocalTimelineFile(body.path.trim()));
+  } catch (error) {
+    const code = error instanceof Error && 'code' in error ? error.code : undefined;
+    sendJson(res, 400, { error: error instanceof Error ? error.message : String(error), ...(typeof code === 'string' ? { code } : {}) });
+  }
+}
+
 /** Vite ignores a rejected middleware promise, so turn handler bugs into a 500
  *  instead of an unhandled rejection that stalls the request. */
 function serve(
@@ -142,6 +164,7 @@ export function localMediaPlugin(): Plugin {
     configureServer(server) {
       server.middlewares.use(LOCAL_MEDIA_BROWSE_PATH, (req, res) => serve(handleBrowse, req, res));
       server.middlewares.use(LOCAL_MEDIA_IMPORT_PATH, (req, res) => serve(handleImport, req, res));
+      server.middlewares.use(LOCAL_TIMELINE_READ_PATH, (req, res) => serve(handleReadTimeline, req, res));
     },
   };
 }

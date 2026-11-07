@@ -3,7 +3,9 @@ import type { AgentToolSchema } from '../../tool-schema';
 export const TIMELINE_IMPORT_TOOL_SCHEMAS: AgentToolSchema[] = [{
   name: 'import_timeline',
   description: [
-    'Import a Final Cut Pro / DaVinci Resolve FCPXML 1.x project or a CMX 3600 EDL into a new editable OpenChatCut timeline.',
+    'Import a Final Cut Pro / DaVinci Resolve FCPXML 1.x project, a CMX 3600 EDL, or a CapCut draft into a new editable OpenChatCut timeline.',
+    'Prefer path for a file on disk, and always use it for CapCut: pass the draft folder or its draft_content.json. Path access follows AGENT_IMPORT_ROOTS.',
+    'CapCut import keeps video and audio clips, trims, speed, track order and the canvas size. Text, stickers, effects, filters, transitions, position, scale and keyframes are reported as skipped or in warnings. Encrypted JianYing 6+ drafts cannot be read.',
     'The new timeline runs at the project frame rate; a sequence or list at another rate is converted, rounding cut points to the nearest frame.',
     'FCPXML times are converted to the new timeline through the sequence tcStart and every enclosing clip, gap, connected clip or storyline (lanes), compound clip (ref-clip), sync-clip, multicam clip (active angle) and audition (active pick), including rate conform and retime speed; source in-points are measured from each file\'s own start timecode.',
     'EDL events are placed from the list\'s record start: the hour boundary (e.g. 01:00:00:00) when the first record-in is within a minute of it, otherwise the first record-in, or startTimecode when given. EDLs do not record their frame rate: fps defaults to the current timeline\'s (29.97/59.94 for drop-frame lists).',
@@ -13,8 +15,9 @@ export const TIMELINE_IMPORT_TOOL_SCHEMAS: AgentToolSchema[] = [{
   input_schema: {
     type: 'object',
     properties: {
-      format: { type: 'string', enum: ['fcpxml', 'edl'], description: 'Interchange format.' },
-      content: { type: 'string', description: 'Complete UTF-8 FCPXML or CMX 3600 EDL document text.' },
+      format: { type: 'string', enum: ['fcpxml', 'edl', 'capcut'], description: 'Interchange format.' },
+      path: { type: 'string', description: 'Absolute path to a .fcpxml, .fcpxmld, .edl, .xml or draft_*.json file, or a CapCut draft folder. Pass this or content.' },
+      content: { type: 'string', description: 'Complete UTF-8 document text, for small FCPXML or EDL documents. Pass this or path.' },
       name: { type: 'string', description: 'Optional imported timeline name.' },
       activate: { type: 'boolean', description: 'Open the imported timeline after success; default true.' },
       fps: {
@@ -29,7 +32,7 @@ export const TIMELINE_IMPORT_TOOL_SCHEMAS: AgentToolSchema[] = [{
         description: 'EDL only: record timecode that becomes frame 0, e.g. "01:00:00:00" or "00:59:50:00".',
       },
     },
-    required: ['format', 'content'],
+    required: ['format'],
     additionalProperties: false,
   },
 }];

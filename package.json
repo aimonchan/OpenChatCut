@@ -19,6 +19,8 @@
     "sync:mediapipe": "node scripts/sync-mediapipe.mjs",
     "sync:whisper-cli": "node scripts/sync-whisper-cli.mjs",
     "generate:server-tool-catalog": "tsx server/agent-runs/generate-tool-catalog.mts",
+    "verify:premiere": "tsx src/export/premiereMedia.verify.ts && tsx src/export/premiereBake.verify.ts && tsx src/export/premiere.verify.ts && tsx src/export/premiereWorkflow.verify.ts",
+    "verify:capcut-import": "tsx src/agent/tools/timeline-import-capcut.verify.ts",
     "verify:server-tool-catalog": "tsx server/agent-runs/generate-tool-catalog.mts --check",
     "predev": "npm run sync:mediapipe && npm run sync:whisper-cli && npm run verify:server-tool-catalog",
     "dev": "node scripts/dev-profile.mjs",

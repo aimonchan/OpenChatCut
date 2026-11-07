@@ -46,11 +46,12 @@ export function applyExportGeometry(
 ): TimelineState {
   let next: TimelineState = { ...state };
   if (opts.resolution && RES_HEIGHT[opts.resolution]) {
-    const targetH = RES_HEIGHT[opts.resolution];
-    const aspect = state.width / Math.max(1, state.height);
-    const height = targetH;
-    const width = Math.max(2, Math.round(height * aspect / 2) * 2); // even
-    next = { ...next, width, height };
+    // The preset names the shorter side, matching the export dialog and the
+    // tool schema, so a 1080x1920 canvas stays 1080x1920 at 1080p.
+    const target = RES_HEIGHT[opts.resolution];
+    const scale = target / Math.max(1, Math.min(state.width, state.height));
+    const even = (value: number) => Math.max(2, Math.round(value * scale / 2) * 2);
+    next = { ...next, width: even(state.width), height: even(state.height) };
   }
   if (typeof opts.fps === 'number' && [24, 25, 30, 50, 60].includes(opts.fps)) {
     next = { ...next, fps: opts.fps };

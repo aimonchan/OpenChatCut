@@ -8,6 +8,7 @@ import type { AgentPathImportRequest, AgentPathImportResult } from '../../shared
 
 const BROWSE_URL = '/api/local-media/browse';
 const IMPORT_URL = '/api/local-media/import';
+const READ_TIMELINE_URL = '/api/local-media/read-timeline';
 
 /**
  * `code` mirrors the desktop IPC error contract (IMPORT_ROOTS_NOT_CONFIGURED,
@@ -40,6 +41,10 @@ export function browseLocalMediaOverHttp(
   request: AgentLocalMediaRequest,
 ): Promise<AgentLocalMediaResult> {
   return postJson<AgentLocalMediaResult>(BROWSE_URL, request);
+}
+
+export function readTimelineFileOverHttp(path: string): Promise<{ path: string; content: string }> {
+  return postJson<{ path: string; content: string }>(READ_TIMELINE_URL, { path });
 }
 
 export function importAgentPathsOverHttp(

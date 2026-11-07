@@ -12,6 +12,7 @@ import { captionPages } from '../captions/exportCaptions';
 import { joinCaptionWords } from '../captions/types';
 import { activeTimeline, type ProjectDoc, type TimelineItem, type TimelineState } from '../editor/types';
 import { placeRange, timelinePlacements, type TimelinePlacement } from '../editor/sequenceFlatten';
+import { isSequenceItem } from '../editor/sequenceGraph';
 import { sourceFrameAt, timelineFramesToSourceFrames } from '../editor/sourceLimit';
 import { transcriptSegments } from './fcpxml';
 
@@ -39,8 +40,13 @@ export interface JianyingDraftCaption {
 
 export interface JianyingDraftPayload {
   fps: number;
+  /** Canvas size, so a vertical timeline does not open as a 16:9 draft. */
+  width: number;
+  height: number;
   items: JianyingDraftClip[];
   captions: JianyingDraftCaption[];
+  /** Timeline content a draft cannot hold, reported back as warnings. */
+  omitted: string[];
 }
 
 const DRAFT_CLIP_KINDS: ReadonlySet<string> = new Set<JianyingDraftClipKind>(['video', 'image', 'gif', 'audio']);
@@ -133,6 +139,19 @@ function placedCaptions(placement: TimelinePlacement): JianyingDraftCaption[] {
   });
 }
 
+/** What the draft will not carry. Sequences are excluded: they are flattened. */
+function omittedContent(timeline: TimelineState): string[] {
+  const counts = new Map<string, number>();
+  for (const item of timeline.items) {
+    if (isDraftClipItem(item) || isSequenceItem(item)) continue;
+    counts.set(item.kind, (counts.get(item.kind) ?? 0) + 1);
+  }
+  const omitted = [...counts].map(([kind, count]) => `${count} ${kind} item(s) are not in the draft`);
+  const transitions = timeline.transitions?.length ?? 0;
+  if (transitions) omitted.push(`${transitions} transition(s) are not in the draft`);
+  return omitted;
+}
+
 /** The clips and captions of the project's active timeline, as the exporter
  * takes them, with nested sequences flattened onto it in timeline order. */
 export function jianyingDraftPayload(project: ProjectDoc): JianyingDraftPayload {
@@ -140,6 +159,9 @@ export function jianyingDraftPayload(project: ProjectDoc): JianyingDraftPayload 
   const placements = timelinePlacements(project, timeline.id);
   return {
     fps: timeline.fps,
+    width: timeline.width,
+    height: timeline.height,
+    omitted: omittedContent(timeline),
     items: placements.flatMap(placedClips).sort((a, b) => a.startFrame - b.startFrame),
     captions: placements.flatMap(placedCaptions).sort((a, b) => a.startMs - b.startMs),
   };
