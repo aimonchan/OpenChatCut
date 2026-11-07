@@ -9,6 +9,7 @@ import { trackGenerationProgress } from '../../generate/progress';
 import { submitVideo, type VideoGenerationSubmission } from '../../generate/video';
 import { submitVoice } from '../../generate/voice';
 import { timelineToFcpxml, type NleFormat } from '../../export/fcpxml';
+import { exportPremiereXml } from './premiere-export-handler';
 import { fcpxmlMediaLocations } from '../../export/exportMediaSources';
 import { recordExport } from '../../persist/exportHistoryStore';
 import {
@@ -324,6 +325,7 @@ async function exportMedia(args: GenerateArgs, target: ExportTarget, format: 'au
 }
 
 async function exportXml(args: GenerateArgs, state: TimelineState): Promise<unknown> {
+  if (args.nleFormat === 'premiere_xml') return exportPremiereXml(args, state);
   const nleFormat: NleFormat = args.nleFormat === 'fcp_xml_resolve' ? 'fcp_xml_resolve' : 'fcp_xml';
   const keys = Array.isArray(args.motionGraphicRenderKeys)
     ? args.motionGraphicRenderKeys.filter((value): value is string => typeof value === 'string').map((value) => value.trim()).filter(Boolean)
@@ -343,7 +345,9 @@ async function exportXml(args: GenerateArgs, state: TimelineState): Promise<unkn
   // off before the browser starts reading the blob (same pattern as exportFiles.ts).
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   void recordExport({ name: filename, format: 'xml', sizeBytes: blob.size, createdAt: Date.now() });
-  return { ok: true, format: 'xml', nleFormat, name: filename, sizeBytes: blob.size, motionGraphicRenderKeys: keys };
+  const transitions = state.transitions?.length ?? 0;
+  const warnings = transitions ? [`${transitions} transition(s) are not in the FCPXML`] : [];
+  return { ok: true, format: 'xml', nleFormat, name: filename, sizeBytes: blob.size, motionGraphicRenderKeys: keys, warnings };
 }
 
 async function submitExportHandler(args: GenerateArgs, ctx: AgentContext): Promise<unknown> {
