@@ -6,7 +6,7 @@ const CAPTION_ACTIONS = [
   'display_text', 'template', 'style', 'animation', 'layout', 'layout_policy', 'positions',
   'preset_apply', 'preset_delete', 'preset_list', 'preset_rename', 'preset_save',
   'bilingual', 'language_mode', 'source_add', 'source_list', 'source_remove',
-  'source_set', 'source_update', 'track',
+  'source_set', 'source_update', 'track', 'import_srt',
 ];
 
 export const CAPTIONS_TOOL_SCHEMAS: AgentToolSchema[] = [
@@ -22,6 +22,7 @@ export const CAPTIONS_TOOL_SCHEMAS: AgentToolSchema[] = [
     name: 'edit_captions',
     description:
       "Manage the captions/subtitles overlay via a single `action`. Read text first only for display_text (use read_captions); every other action is one direct call.\n" +
+      "- import_srt: create editable manual captions from SRT text — json {content:\"<full SRT text>\", name?}. Pass the SRT body inline; file paths are not read. Without captionTrackId it creates a new caption track (returned as captionTrackId); with captionTrackId it replaces that track's captions. Works with captions off. Then use style/layout/animation on the returned captionTrackId.\n" +
       "- enable / disable: toggle captions data (enable optionally takes a built-in `preset` name).\n" +
       "- hide_overlay / show_overlay: global captionsHidden flag (toolbar 字幕显示) — hides on-screen caption overlay and text clips without wiping caption data; show_overlay re-enables.\n" +
       "- template: no arg → list the 21 built-in presets; `templatePreset:\"netflix\"` → apply one (size/position preserved).\n" +
