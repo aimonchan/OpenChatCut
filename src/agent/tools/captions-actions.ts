@@ -9,6 +9,8 @@ import { captionsOnTrack, defaultTrackId, resolveTrackId, timelineTrackIds, trac
 import { hasOperationalTranscript } from '../../transcript/types';
 import { applyDisplayTextEntries } from './captions-word-overrides';
 import { isCaptionMotionPreset } from '../../captions/captionMotion';
+import { parseSrt } from '../../captions/srt';
+import { identifyManualCues, newManualCaptions } from '../../captions/manualCaptions';
 
 // edit_captions uses one tool with a multi-action dispatcher. Most action data
 // arrives as a JSON string in `json`. Backed by OpenChatCut's captions overlay
@@ -87,6 +89,57 @@ function displayText(json: Record<string, unknown>, c: CaptionsData, ctx: AgentC
   };
 }
 
+/**
+ * import_srt: build editable manual captions from inline SRT text — the agent
+ * equivalent of the editor's "import SRT" button. Without captionTrackId it
+ * creates a new caption track; with captionTrackId it replaces that track's
+ * captions. File paths are not read (browser tools cannot reach local disk),
+ * so the caller passes the SRT body in json.content.
+ */
+function importSrt(
+  json: Record<string, unknown>,
+  target: string | null,
+  replaceRequested: boolean,
+  ctx: AgentContext,
+  s: TimelineState,
+): Result {
+  const content = typeof json.content === 'string' ? json.content : '';
+  if (!content.trim()) {
+    return { error: 'import_srt needs json {content:"<full SRT text>", name?}; file paths are not read' };
+  }
+  let words;
+  try {
+    words = identifyManualCues(parseSrt(content));
+  } catch {
+    return { error: 'import_srt: no valid SRT cues found (expected "HH:MM:SS,mmm --> HH:MM:SS,mmm" blocks)' };
+  }
+  const name = str(json.name) || 'Imported SRT';
+  const laneId = `srt_${crypto.randomUUID()}`;
+  const captions: CaptionsData = {
+    ...newManualCaptions(),
+    sourceEntries: [{ id: laneId, itemId: `manual:${laneId}`, label: name, words }],
+  };
+  let trackId: string;
+  if (replaceRequested && target) {
+    ctx.commands.setCaptions(captions);
+    trackId = target;
+  } else {
+    trackId = ctx.commands.createCaptionTrack(captions, { name });
+  }
+  const after = ctx.getState();
+  const last = words[words.length - 1]!;
+  return {
+    ok: true,
+    captionTrackId: trackAlias(after, trackId) ?? trackId,
+    id: trackId,
+    replaced: replaceRequested && !!target,
+    cues: words.length,
+    firstCue: { text: words[0]!.text, startMs: words[0]!.start },
+    lastCue: { text: last.text, endMs: last.end, endFrame: Math.ceil((last.end / 1000) * s.fps) },
+    note: 'Manual captions; style with action=style/layout on this captionTrackId, fix text with display_text.',
+  };
+}
+
 /** preset_apply/rename/delete resolve a saved preset by presetId (or presetName). */
 async function findPreset(args: Args, json: Record<string, unknown>): Promise<CaptionPreset | undefined> {
   const q = str(args.presetId) || str(json.presetId) || str(json.id) || str(args.presetName) || str(json.presetName) || str(json.name);
@@ -113,6 +166,9 @@ export async function editCaptions(args: Args, ctx: AgentContext): Promise<Resul
     };
   }
   const json = parseJson(args);
+
+  // ── import_srt: works with captions off; creates (or replaces) a caption track ──
+  if (action === 'import_srt') return importSrt(json, target, !!requested, ctx, s);
 
   // ── template: list built-ins (no arg) or apply one — works with captions off ──
   if (action === 'template') {
